@@ -1,0 +1,77 @@
+- name: Bootstrap fresh Ubuntu VPS access
+  hosts: all
+  become: true
+  gather_facts: true
+  remote_user: root
+
+  pre_tasks:
+    - name: Ensure bootstrap user variables are present
+      ansible.builtin.assert:
+        that:
+          - admin_user is defined
+          - admin_authorized_keys is defined
+          - admin_authorized_keys | length > 0
+        fail_msg: admin_user and admin_authorized_keys are required.
+
+    - name: Check whether repo-managed SSH hardening is already present
+      ansible.builtin.stat:
+        path: /etc/ssh/sshd_config.d/99-ansible-hardening.conf
+      register: bootstrap_sshd_hardening
+
+    - name: Abort bootstrap on already-managed hosts
+      ansible.builtin.fail:
+        msg: >-
+          Bootstrap appears to have already run on this host.
+          Use playbooks/site.yml for ongoing management instead.
+      when: bootstrap_sshd_hardening.stat.exists
+
+    - name: Install bootstrap prerequisites
+      ansible.builtin.apt:
+        name:
+          - sudo
+        state: present
+        update_cache: true
+
+  roles:
+    - role: common
+
+  tasks:
+    - name: Create admin user
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        shell: "{{ admin_shell }}"
+        groups: "{{ admin_groups }}"
+        append: true
+        create_home: true
+
+    - name: Install admin authorized keys
+      ansible.posix.authorized_key:
+        user: "{{ admin_user }}"
+        state: present
+        key: "{{ item }}"
+      loop: "{{ admin_authorized_keys }}"
+
+    - name: Allow passwordless sudo for admin user
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/90-{{ admin_user }}"
+        content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Lock admin password
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        password_lock: true
+
+    - name: Include ssh hardening after user is ready
+      ansible.builtin.include_role:
+        name: sshd
+
+    - name: Ensure fail2ban is configured
+      ansible.builtin.include_role:
+        name: fail2ban
+      when: fail2ban_enabled | bool
+
+    - name: Ensure UFW is configured
+      ansible.builtin.include_role:
+        name: ufw

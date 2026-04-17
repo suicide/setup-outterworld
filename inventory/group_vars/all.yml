@@ -1,0 +1,36 @@
+admin_shell: /bin/bash
+admin_groups:
+  - sudo
+
+ssh_port: 22
+
+base_packages:
+  - ca-certificates
+  - curl
+  - fail2ban
+  - htop
+  - python3
+  - python3-apt
+  - python3-debian
+  - sudo
+  - ufw
+  - unattended-upgrades
+  - vim
+
+fail2ban_enabled: true
+fail2ban_bantime: 1h
+fail2ban_findtime: 10m
+fail2ban_maxretry: 5
+
+flux_version: v2.8.6
+flux_git_url: https://github.com/suicide/setup-outterworld.git
+flux_git_branch: master
+flux_git_repository_name: platform-config
+flux_kustomization_name: cluster-config
+flux_sync_interval: 1m0s
+helm_version: v3.20.2
+
+k3s_version: v1.35.3+k3s1
+
+nodeport_tcp_allow: []
+nodeport_udp_allow: []

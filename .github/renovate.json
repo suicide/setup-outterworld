@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["github-actions", "custom.regex"],
+  "ignorePaths": ["flake.nix", "flake.lock"],
+  "prConcurrentLimit": 5,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^inventory\\/group_vars\\/all\\.yml$/"],
+      "matchStrings": ["(?m)^cert_manager_chart_version:\\s*(?<currentValue>\\S+)\\s*$"],
+      "depNameTemplate": "cert-manager/cert-manager",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^inventory\\/group_vars\\/all\\.yml$/"],
+      "matchStrings": ["(?m)^helm_version:\\s*(?<currentValue>\\S+)\\s*$"],
+      "depNameTemplate": "helm/helm",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^inventory\\/group_vars\\/all\\.yml$/"],
+      "matchStrings": ["(?m)^k3s_version:\\s*(?<currentValue>\\S+)\\s*$"],
+      "depNameTemplate": "k3s-io/k3s",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "groupName": "Deployment version updates"
+    }
+  ]
+}

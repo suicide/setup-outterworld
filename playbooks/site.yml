@@ -1,0 +1,23 @@
+- name: Configure single-node K3s VPS hosts
+  hosts: k3s_single_node
+  become: true
+  gather_facts: true
+  remote_user: "{{ admin_user }}"
+
+  pre_tasks:
+    - name: Ensure required host variables are present
+      ansible.builtin.assert:
+        that:
+          - admin_user is defined
+          - hostname is defined
+          - ssh_port is defined
+        fail_msg: admin_user, hostname, and ssh_port must be defined per host.
+
+  roles:
+    - role: common
+    - role: sshd
+    - role: ufw
+    - role: fail2ban
+      when: fail2ban_enabled | bool
+    - role: k3s
+    - role: flux

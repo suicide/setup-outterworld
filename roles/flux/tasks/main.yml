@@ -1,0 +1,134 @@
+- name: Ensure Flux configuration variables are present
+  ansible.builtin.assert:
+    that:
+      - flux_git_url is defined
+      - flux_git_url | length > 0
+      - flux_git_branch is defined
+      - flux_git_branch | length > 0
+    fail_msg: flux_git_url and flux_git_branch must be defined.
+
+- name: Ensure encrypted Let's Encrypt email file is present locally
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.file', playbook_dir ~ '/../secrets/letsencrypt-email') | trim | length > 0
+    fail_msg: secrets/letsencrypt-email must exist and contain the Let's Encrypt contact email.
+
+- name: Install Flux controllers
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f
+    https://github.com/fluxcd/flux2/releases/download/{{ flux_version }}/install.yaml
+  register: flux_install
+  changed_when: >-
+    ' created' in flux_install.stdout or
+    ' configured' in flux_install.stdout or
+    'unchanged' not in flux_install.stdout
+
+- name: Wait for source-controller deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n flux-system
+    rollout status deployment/source-controller --timeout=180s
+  changed_when: false
+
+- name: Wait for kustomize-controller deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n flux-system
+    rollout status deployment/kustomize-controller --timeout=180s
+  changed_when: false
+
+- name: Wait for helm-controller deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n flux-system
+    rollout status deployment/helm-controller --timeout=180s
+  changed_when: false
+
+- name: Wait for notification-controller deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n flux-system
+    rollout status deployment/notification-controller --timeout=180s
+  changed_when: false
+
+- name: Write Flux bootstrap variables Secret manifest
+  ansible.builtin.copy:
+    dest: /tmp/flux-cluster-vars.yaml
+    mode: "0600"
+    content: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cluster-vars
+        namespace: flux-system
+      type: Opaque
+      stringData:
+        LETSENCRYPT_EMAIL: {{ lookup('ansible.builtin.file', playbook_dir ~ '/../secrets/letsencrypt-email') | trim | to_json }}
+
+- name: Apply Flux bootstrap variables Secret
+  ansible.builtin.command: kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f /tmp/flux-cluster-vars.yaml
+  register: flux_cluster_vars_apply
+  changed_when: >-
+    ' created' in flux_cluster_vars_apply.stdout or
+    ' configured' in flux_cluster_vars_apply.stdout
+
+- name: Write Flux GitRepository manifest
+  ansible.builtin.copy:
+    dest: /tmp/flux-gitrepository.yaml
+    mode: "0644"
+    content: |
+      apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      metadata:
+        name: {{ flux_git_repository_name }}
+        namespace: flux-system
+      spec:
+        interval: {{ flux_sync_interval }}
+        url: {{ flux_git_url | to_json }}
+        ref:
+          branch: {{ flux_git_branch | to_json }}
+
+- name: Apply Flux GitRepository
+  ansible.builtin.command: kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f /tmp/flux-gitrepository.yaml
+  register: flux_gitrepository_apply
+  changed_when: >-
+    ' created' in flux_gitrepository_apply.stdout or
+    ' configured' in flux_gitrepository_apply.stdout
+
+- name: Write Flux Kustomization manifest
+  ansible.builtin.copy:
+    dest: /tmp/flux-kustomization.yaml
+    mode: "0644"
+    content: |
+      apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      metadata:
+        name: {{ flux_kustomization_name }}
+        namespace: flux-system
+      spec:
+        interval: {{ flux_sync_interval }}
+        path: {{ ('./clusters/' ~ inventory_hostname) | to_json }}
+        prune: true
+        wait: true
+        sourceRef:
+          kind: GitRepository
+          name: {{ flux_git_repository_name }}
+        postBuild:
+          substituteFrom:
+            - kind: Secret
+              name: cluster-vars
+
+- name: Apply Flux Kustomization
+  ansible.builtin.command: kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f /tmp/flux-kustomization.yaml
+  register: flux_kustomization_apply
+  changed_when: >-
+    ' created' in flux_kustomization_apply.stdout or
+    ' configured' in flux_kustomization_apply.stdout
+
+- name: Wait for Flux GitRepository to become ready
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n flux-system
+    wait gitrepository/{{ flux_git_repository_name }} --for=condition=ready --timeout=180s
+  changed_when: false
+
+- name: Wait for Flux Kustomization to become ready
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n flux-system
+    wait kustomization/{{ flux_kustomization_name }} --for=condition=ready --timeout=300s
+  changed_when: false
