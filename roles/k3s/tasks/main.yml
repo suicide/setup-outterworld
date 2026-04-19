@@ -1,0 +1,55 @@
+- name: Ensure K3s config directory exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+- name: Check installed K3s version
+  ansible.builtin.command: k3s --version
+  register: k3s_version_check
+  failed_when: false
+  changed_when: false
+
+- name: Write K3s config file
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0644"
+    content: |
+      {% for key, value in k3s_config.items() %}
+      {{ key }}: {{ value | to_json }}
+      {% endfor %}
+  notify: Restart k3s
+
+- name: Download K3s install script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /usr/local/bin/install-k3s.sh
+    mode: "0755"
+
+- name: Install K3s server
+  ansible.builtin.command: /usr/local/bin/install-k3s.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: server
+  when: >-
+    k3s_version_check.rc != 0 or
+    (k3s_version_check.stdout_lines | default([]) | first | default('')) is not search(k3s_version | regex_escape)
+  changed_when: true
+  notify: Restart k3s
+
+- name: Ensure K3s service is enabled and running
+  ansible.builtin.service:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Flush K3s handlers before API checks
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Kubernetes API to respond locally
+  ansible.builtin.command: kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes
+  register: k3s_nodes
+  retries: 20
+  delay: 10
+  until: k3s_nodes.rc == 0
+  changed_when: false

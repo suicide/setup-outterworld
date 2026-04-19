@@ -1,0 +1,67 @@
+- name: Add cert-manager Helm repo
+  ansible.builtin.command: helm repo add jetstack https://charts.jetstack.io
+  register: cert_manager_helm_repo_add
+  failed_when:
+    - cert_manager_helm_repo_add.rc != 0
+    - "'already exists' not in cert_manager_helm_repo_add.stderr"
+  changed_when: "'already exists' not in cert_manager_helm_repo_add.stderr"
+
+- name: Update Helm repos
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: Check installed cert-manager release
+  ansible.builtin.command: >-
+    helm list --namespace {{ cert_manager_namespace }} --filter ^cert-manager$ --output json
+    --kubeconfig /etc/rancher/k3s/k3s.yaml
+  register: cert_manager_release_query
+  changed_when: false
+
+- name: Parse installed cert-manager release
+  ansible.builtin.set_fact:
+    cert_manager_release_info: >-
+      {{
+        (cert_manager_release_query.stdout | from_json | first)
+        if (cert_manager_release_query.stdout | from_json | length > 0)
+        else {}
+      }}
+
+- name: Ensure cert-manager namespace exists
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml create namespace {{ cert_manager_namespace }} --dry-run=client -o yaml |
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f -
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Install or upgrade cert-manager
+  ansible.builtin.command: >-
+    helm upgrade --install cert-manager jetstack/cert-manager
+    --namespace {{ cert_manager_namespace }}
+    --version {{ cert_manager_chart_version }}
+    --set crds.enabled=true
+    --kubeconfig /etc/rancher/k3s/k3s.yaml
+  register: cert_manager_helm
+  when: >-
+    cert_manager_release_info == {} or
+    not (cert_manager_release_info.chart | default('') | regex_search('-' ~ (cert_manager_chart_version | regex_escape) ~ '$'))
+  changed_when: true
+
+- name: Wait for cert-manager deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n {{ cert_manager_namespace }}
+    rollout status deployment/cert-manager --timeout=180s
+  changed_when: false
+
+- name: Wait for cert-manager webhook deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n {{ cert_manager_namespace }}
+    rollout status deployment/cert-manager-webhook --timeout=180s
+  changed_when: false
+
+- name: Wait for cert-manager cainjector deployment
+  ansible.builtin.command: >-
+    kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n {{ cert_manager_namespace }}
+    rollout status deployment/cert-manager-cainjector --timeout=180s
+  changed_when: false

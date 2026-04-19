@@ -1,0 +1,38 @@
+- name: Write cert-manager ClusterIssuer manifest
+  ansible.builtin.copy:
+    dest: /tmp/cluster-issuers.yaml
+    mode: "0644"
+    content: |
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-staging
+      spec:
+        acme:
+          email: {{ letsencrypt_email }}
+          server: https://acme-staging-v02.api.letsencrypt.org/directory
+          privateKeySecretRef:
+            name: letsencrypt-staging-account-key
+          solvers:
+            - http01:
+                ingress:
+                  ingressClassName: traefik
+      ---
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-prod
+      spec:
+        acme:
+          email: {{ letsencrypt_email }}
+          server: https://acme-v02.api.letsencrypt.org/directory
+          privateKeySecretRef:
+            name: letsencrypt-prod-account-key
+          solvers:
+            - http01:
+                ingress:
+                  ingressClassName: traefik
+
+- name: Apply cert-manager ClusterIssuers
+  ansible.builtin.command: kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f /tmp/cluster-issuers.yaml
+  changed_when: false

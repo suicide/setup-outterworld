@@ -1,0 +1,4 @@
+k3s_config:
+  write-kubeconfig-mode: "0640"
+  node-name: "{{ k3s_node_name | default(hostname) }}"
+  write-kubeconfig-group: "{{ admin_user }}"
