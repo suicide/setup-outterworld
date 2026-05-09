@@ -1,0 +1,17 @@
+ansible_port: 22
+
+hostname: outterworld
+k3s_node_name: outterworld
+
+admin_user: ubuntu
+admin_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHQpikI8yNRyznGgL1Klf17ZIkFLOeow6OwqMoFhdP+f
+
+ssh_port: 22
+
+nodeport_tcp_allow:
+  - 30000
+  - 30002
+
+nodeport_udp_allow:
+  - 30001
