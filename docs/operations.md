@@ -46,6 +46,36 @@ spec:
       secretName: app-example-com-tls
 ```
 
+## Cutover
+
+For the first migration on an existing cluster:
+
+1. run `ansible-playbook -i inventory/hosts.yml playbooks/site.yml --limit <host>`
+2. wait for Flux to report `GitRepository` and `Kustomization` as Ready
+3. verify `kubectl get helmreleases -A` shows the `cert-manager` HelmRelease as Ready
+4. verify `kubectl get clusterissuers` shows both issuers as Ready
+5. verify `kubectl get pods -n cert-manager` stays healthy during the handoff
+
+Recommended checks:
+
+```bash
+kubectl -n flux-system get gitrepositories,kustomizations
+kubectl get helmreleases -A
+kubectl get pods -n cert-manager
+kubectl get clusterissuers
+```
+
+## Rollback
+
+If Flux bootstrap succeeds but `cert-manager` does not reconcile cleanly:
+
+1. delete the Flux `Kustomization` for the cluster with `kubectl -n flux-system delete kustomization cluster-config`
+2. delete the Flux `GitRepository` with `kubectl -n flux-system delete gitrepository platform-config`
+3. restore the previous Ansible-managed `cert-manager` and `cluster_issuers` flow from Git
+4. rerun `playbooks/site.yml`
+
+Do not delete the existing `cert-manager` namespace, ACME account secrets, or issued certificate secrets during rollback.
+
 ## Existing hosts
 
 Existing manually provisioned VPSes can be added later by:
