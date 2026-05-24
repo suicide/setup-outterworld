@@ -28,9 +28,9 @@ flux_git_branch: master
 flux_git_repository_name: platform-config
 flux_kustomization_name: cluster-config
 flux_sync_interval: 1m0s
-helm_version: v3.20.2
+helm_version: v3.21.0
 
-k3s_version: v1.36.0+k3s1
+k3s_version: v1.36.1+k3s1
 
 nodeport_tcp_allow: []
 nodeport_udp_allow: []
