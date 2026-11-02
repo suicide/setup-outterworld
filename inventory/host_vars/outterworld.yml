@@ -14,4 +14,5 @@ nodeport_tcp_allow:
   - 30002
 
 nodeport_udp_allow:
+  - 30000
   - 30001
