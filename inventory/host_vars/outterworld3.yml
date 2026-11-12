@@ -7,6 +7,10 @@ admin_user: ubuntu
 admin_authorized_keys:
   - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFlYHezIXQ0N+xZgPjr3sTEqBVXZ9mooIan9PlmIjPkH
 
+# Ubuntu 26.04 on kernel 7.0.0-42+ stacks cri-containerd.apparmor.d//&unconfined,
+# and containerd PR 14487 is not in a k3s release yet.
+cri_apparmor_stacked_peer_workaround: true
+
 ssh_port: 22
 
 nodeport_tcp_allow:

@@ -1,0 +1,7 @@
+---
+# Temporary host override until k3s ships containerd PR 14487.
+# Keep this off except on Ubuntu hosts with kernel.apparmor_restrict_unprivileged_unconfined=1
+# and kernel 7.0.0-42 or later.
+cri_apparmor_stacked_peer_workaround: false
+cri_apparmor_profile_name: cri-containerd.apparmor.d
+cri_apparmor_profile_path: "/etc/apparmor.d/{{ cri_apparmor_profile_name }}"

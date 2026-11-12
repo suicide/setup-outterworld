@@ -19,5 +19,10 @@
     - role: ufw
     - role: fail2ban
       when: fail2ban_enabled | bool
+    - role: cri_apparmor
+      tags:
+        - cri-apparmor
     - role: k3s
+      tags:
+        - k3s
     - role: flux

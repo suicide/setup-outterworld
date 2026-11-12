@@ -1,0 +1,102 @@
+---
+- name: Remove the workaround profile when it is disabled
+  ansible.builtin.file:
+    path: "{{ cri_apparmor_profile_path }}"
+    state: absent
+  when: not (cri_apparmor_stacked_peer_workaround | bool)
+
+- name: Ensure AppArmor is installed for the stacked-peer workaround
+  ansible.builtin.apt:
+    name: apparmor
+    state: present
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Ensure AppArmor loads host profiles before K3s starts
+  ansible.builtin.service:
+    name: apparmor
+    state: started
+    enabled: true
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Read the K3s daemon AppArmor label
+  ansible.builtin.shell: |
+    set -euo pipefail
+    pid=$(pgrep -x k3s-server | head -1)
+    tr '\0' '\n' < "/proc/${pid}/attr/apparmor/current" | head -1 | base64 -w0
+  args:
+    executable: /bin/bash
+  register: cri_apparmor_daemon_label
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Set the daemon peer used by the profile
+  ansible.builtin.set_fact:
+    cri_apparmor_daemon_profile: >-
+      {{
+        (cri_apparmor_daemon_label.stdout | b64decode | regex_replace('\s.*$', ''))
+        if (cri_apparmor_daemon_label.rc | default(1)) == 0
+        else 'unconfined'
+      }}
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Require the daemon peer to be a single AppArmor label
+  ansible.builtin.assert:
+    that:
+      - cri_apparmor_daemon_profile | length > 0
+      - cri_apparmor_daemon_profile is match('^[^\s]+$')
+    fail_msg: >-
+      Could not derive a single AppArmor label from the K3s daemon.
+      Refusing to write a profile with an ambiguous daemon peer.
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Read the AppArmor restriction sysctls
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -n
+      - kernel.apparmor_restrict_unprivileged_unconfined
+      - kernel.apparmor_restrict_unprivileged_userns
+  register: cri_apparmor_sysctls
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Keep the host AppArmor restrictions enabled
+  ansible.builtin.assert:
+    that:
+      - cri_apparmor_sysctls.rc | default(1) == 0
+      - cri_apparmor_sysctls.stdout_lines | default([]) == ['1', '1']
+    fail_msg: >-
+      kernel.apparmor_restrict_unprivileged_unconfined and
+      kernel.apparmor_restrict_unprivileged_userns must both stay 1.
+      This role does not change them.
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Install the containerd AppArmor profile with stacked-peer rules
+  ansible.builtin.template:
+    src: cri-containerd.apparmor.d.j2
+    dest: "{{ cri_apparmor_profile_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: apparmor_parser -QK %s
+  notify: Reload cri-containerd AppArmor profile
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Load the replacement profile before any K3s restart
+  ansible.builtin.meta: flush_handlers
+  when: cri_apparmor_stacked_peer_workaround | bool
+
+- name: Confirm the replacement profile is loaded
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -q
+      - "^{{ cri_apparmor_profile_name }} (enforce)$"
+      - /sys/kernel/security/apparmor/profiles
+  changed_when: false
+  check_mode: false
+  when: cri_apparmor_stacked_peer_workaround | bool

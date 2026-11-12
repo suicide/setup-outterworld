@@ -1,0 +1,11 @@
+---
+- name: Reload cri-containerd AppArmor profile
+  ansible.builtin.command:
+    argv:
+      - apparmor_parser
+      - -Kr
+      - "{{ cri_apparmor_profile_path }}"
+  changed_when: true
+  # --tags must not skip the load that makes the profile effective.
+  tags:
+    - cri-apparmor

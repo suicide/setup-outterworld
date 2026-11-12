@@ -9,6 +9,42 @@ Each VPS is its own single-node K3s cluster.
 - Public ingress is exposed only on `80` and `443`.
 - Extra NodePorts are opened only from explicit per-host allowlists.
 
+## AppArmor stacked-peer workaround
+
+Ubuntu 26.04 hosts on kernel `7.0.0-42` or later stack the containerd profile
+with `unconfined`. Container processes then carry
+`cri-containerd.apparmor.d//&unconfined`, and containerd's default profile
+cannot signal them. PostgreSQL cannot wake its checkpointer or backends.
+
+The fix is a full replacement profile in
+`/etc/apparmor.d/cri-containerd.apparmor.d`, plus the two stacked-peer rules.
+Enable it per host with `cri_apparmor_stacked_peer_workaround: true` in that
+host's `inventory/host_vars` file. It is currently enabled only on
+`outterworld3`. The Debian nodes do not use AppArmor.
+
+Apply it without a dist-upgrade or a K3s upgrade:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml \
+  --limit outterworld3 --tags cri-apparmor
+```
+
+The role keeps both AppArmor restriction sysctls at `1`, loads the profile
+before K3s, and confirms the profile is enforcing. Do not mark a pod AppArmor
+`Unconfined`, do not disable the sysctl, and do not delete the PostgreSQL PVC.
+
+The stuck postmaster does not recover in place. After the role succeeds, an
+operator may recycle only the pod:
+
+```bash
+sudo k3s kubectl -n broadcaster-monitor delete pod broadcaster-monitor-postgresql-0
+```
+
+When a k3s release includes containerd PR 14487, set the flag to `false` and run
+the same tagged command. The role removes the file. A profile that is already
+loaded stays until the next boot, when `apparmor.service` no longer loads the
+override and K3s starts with the runtime profile.
+
 ## kube-apiserver access via SSH tunnel
 
 Create a local tunnel to the remote K3s API:
